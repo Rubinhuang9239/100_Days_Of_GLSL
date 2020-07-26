@@ -14,7 +14,13 @@ float rectShape(vec2 position, vec2 scale){
 void main(){
     vec2 position = gl_FragCoord.xy/u_resolution.xy; 
     vec4 color = vec4(0.0);
-    float rect = rectShape(position, vec2(0.3));
-    color = vec4(vec3(rect), 1.0);
+    float rect = rectShape(position, vec2(0.5));
+    if(rect>0.0){
+        color = vec4(position.x * rect,position.y * rect, 1.0, 1.0);
+    }
+    else{
+        color = vec4(1.0-position.x, position.y,1.0,1.0);
+    }
+    
     gl_FragColor = color;
 }
