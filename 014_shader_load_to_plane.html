@@ -1,0 +1,95 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script>
+        window.addEventListener('load', init)
+        let scene
+        let camera
+        let renderer
+
+        const uniforms = {
+            u_resolution: {type: 'vec2', value: new THREE.Vector2(1,1)},
+            u_time: {type: 'float', value: 0.0}
+        }
+        const clock = new THREE.Clock();
+
+        function init() {
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+            camera.position.z = 5
+
+            renderer = new THREE.WebGLRenderer()
+            renderer.setSize(window.innerWidth, window.innerHeight)
+
+            document.body.appendChild(renderer.domElement)
+            adjustLighting();
+            animationLoop();
+
+            void addBasicCube();
+        }
+
+        function adjustLighting() {
+            let pointLight = new THREE.PointLight(0xdddddd)
+            pointLight.position.set(-5, -3, 3)
+            scene.add(pointLight);
+
+            let ambientLight = new THREE.AmbientLight(0x505050)
+            scene.add(ambientLight);
+        }
+
+        addBasicCube = async() => {
+            let geometry = new THREE.PlaneGeometry( 4, 4, 72 );
+
+            const loadShader = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FileLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            let material =  new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                fragmentShader: await loadShader('shader_014/fragment.frag'),
+                vertexShader: await loadShader('shader_014/vertex.vert'),
+                side: THREE.DoubleSide,
+                wireframe: true
+            });
+
+            let mesh_0 = new THREE.Mesh(geometry, material);
+
+            mesh_0.position.y = 0.0;
+            mesh_0.rotation.z -= 0.3 * Math.PI;
+            scene.add(mesh_0);
+        }
+
+        function animationLoop() {
+            renderer.render(scene, camera)
+
+            if(scene.children.length>2){
+                scene.children[2].rotation.y -= 0.005;
+            }
+
+            uniforms.u_time.value = clock.getElapsedTime();
+
+            requestAnimationFrame(animationLoop)
+        }
+    </script>
+</html>
