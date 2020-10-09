@@ -1,0 +1,164 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <script src="lib/perlinNoise.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera, controls;
+        let renderer;
+        let analyser; // audio
+        let pointLight_1;
+        
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+            // u_loudness: {type: 'float', value: 0.0},
+        }
+        const clock = new THREE.Clock();
+
+        const pNoise = new PerlinNoise();
+
+        window.addEventListener('load', ()=>{
+            init();
+            // document.body.addEventListener('click', function(){
+            //     setupAnalyser();
+            // },{once:true});
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(0.0, -2.5, 5.0);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x140717);
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = -1;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xFFEED0, 0.28);
+            pointLight_0.position.set(50, 50, 50);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFEECC);
+            ambientLight.intensity = 0.1;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            const effectMaterial_arms = new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                vertexShader: await loadShader('shader_030/vertex_arms.vert'),
+                fragmentShader: await loadShader('shader_030/fragment_arms.frag'),
+                transparent: true,
+                side: THREE.DoubleSide,
+            });
+            const arms = new THREE.Mesh(new THREE.PlaneGeometry(10,10,512,512), effectMaterial_arms);
+            arms.rotation.x = Math.PI * -0.5;
+            scene.add(arms);
+
+            const effectMaterial_core = new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                vertexShader: await loadShader('shader_030/vertex_core.vert'),
+                fragmentShader: await loadShader('shader_030/fragment_core.frag'),
+                transparent: true,
+            });
+
+            const core = new THREE.Mesh(new THREE.SphereGeometry(0.3,36,36), effectMaterial_core);
+            core.scale.x = 1.25;
+            core.scale.z = 1.25;
+            scene.add(core);
+
+            const core_1 = new THREE.Mesh(new THREE.SphereGeometry(0.3,36,36), effectMaterial_core);
+            const core_2 = new THREE.Mesh(new THREE.SphereGeometry(0.3,36,36), effectMaterial_core);
+
+            core_1.position.set(0,1.0,0.0)
+            core_2.position.set(0,-1.0,0.0)
+
+            scene.add(core_1);
+            scene.add(core_2);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            // controls.target.copy(lunarModuleGroup.position);
+            // controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            //  const cLoudness = 0.18 * (normalizeLoudness(getLoudness()) - uniforms.u_loudness.value);
+        
+            // const noiseVal = pNoise.noise(cTime * 8);
+
+            // pointLight_1.intensity = 2.0 - 1.8 * noiseVal;
+            renderer.render(scene, camera);
+        }
+
+        function normalizeLoudness(raw){
+            const mathClamp = (num, a, b) => {
+                return Math.max(Math.min(num, Math.max(a, b)), Math.min(a, b));
+            }
+            return mathClamp(raw, 0, 20) / 32;
+        }
+
+        function getLoudness() {
+            if(!analyser){
+                return 0.0;
+            }
+            let array = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(array);
+
+            let average = 0;
+            // let max = 0;
+            for (let i = 0; i < array.length; i++) {
+                a = Math.abs(array[i] - 128);
+                average += a;
+                // max = Math.max(max, a);
+            }
+            average /= array.length;
+            return average;
+        }
+
+        function setupAnalyser(){
+            if(window.context){
+                document.getElementById('voice').play();
+                return;
+            }
+            const audioTag = document.getElementById('voice');
+            window.context = new AudioContext();
+            audio = context.createMediaElementSource(audioTag);
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.9;
+            analyser.fftSize = 512;
+            audio.connect(analyser);
+            analyser.connect(context.destination);
+            audioTag.play();
+        }
+    </script>
+</html>

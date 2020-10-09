@@ -1,0 +1,139 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+        <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/FBXLoader.js"></script>
+ <script>
+        window.addEventListener('load', init)
+        let scene;
+        let camera;
+        let renderer;
+        let controls;
+
+
+        let pointLight_0;
+
+        const uniforms = {
+            u_resolution: {type: 'vec2', value: new THREE.Vector2(1,1)},
+            u_time: {type: 'float', value: 0.0}
+        }
+        const clock = new THREE.Clock();
+
+        function init() {
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 8000)
+            camera.position.set(0, 0, 600)
+            camera.lookAt(0,0,0);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x22);
+
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = 5.0;
+
+            addLighting();
+            animationLoop();
+            void add3dObjects();
+        }
+
+        function addLighting() {
+            pointLight_0 = new THREE.PointLight(0xAA2266);
+            pointLight_0.position.set(-40, 5, 32);
+            scene.add(pointLight_0);
+
+            pointLight_1 = new THREE.PointLight(0x3322EE);
+            pointLight_1.position.set(40, -32, -32);
+            scene.add(pointLight_1);
+
+            pointLight_2 = new THREE.PointLight(0x7777FF);
+            pointLight_2.position.set(0, 500, -800);
+            scene.add(pointLight_2);
+
+            pointLight_3 = new THREE.PointLight(0xFF7777);
+            pointLight_3.position.set(0, -500, 900);
+            scene.add(pointLight_3);
+
+            let ambientLight = new THREE.AmbientLight(0xAAAAAA);
+            ambientLight.intensity = 0.36;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            let geometry = new THREE.SphereGeometry( 1, 32, 32 );
+            const loadShader = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FileLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const loadRabbit = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FBXLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const material =  new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                transparent: true,
+                fragmentShader: await loadShader('shader_022/fragment.frag'),
+                vertexShader: await loadShader('shader_022/vertex.vert'),
+                // side: THREE.DoubleSide
+            });
+
+            const brain = (await loadRabbit('shader_022/asset/brain.fbx'));
+
+            const brain_1 = brain.clone();
+            brain_1.scale.set(0.96,0.96,0.96);
+            scene.add(brain_1);
+
+            brain.scale.set(1,1,1);
+            brain.children[0].material = material;
+            brain.children[1].material = material;
+            scene.add(brain);
+
+        }
+
+        function animationLoop() {
+            const cntTime = clock.getElapsedTime();
+            uniforms.u_time.value = cntTime;
+            controls.update();
+            renderer.render(scene, camera)
+            requestAnimationFrame(animationLoop)
+        }
+    </script>
+</html>

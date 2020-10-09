@@ -1,0 +1,189 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/FBXLoader.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera, controls;
+        let renderer;
+        let analyser; // audio
+        let lunarModuleGroup;
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+            u_shadowTex: {type: 'sampler2D', value: null},
+            u_resolution: {type: 'vec2', value: new THREE.Vector2(1.0, 1.0)},
+            // u_loudness: {type: 'float', value: 0.0},
+        }
+        const clock = new THREE.Clock();
+
+        window.addEventListener('load', ()=>{
+            init();
+            // document.body.addEventListener('click', function(){
+            //     setupAnalyser();
+            // },{once:true});
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(-16, 26, 72);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false, antialias: true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x333345);
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            controls.autoRotate = true;
+            controls.target.set(0,10,10);
+            controls.autoRotateSpeed = -5;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xFFEED0, 0.28);
+            pointLight_0.position.set(50, 50, 50);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFEECC);
+            ambientLight.intensity = 0.1;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            // const lunarModuleScene = (await loadGLTFModel('/shader_029/asset/lunar_module.gltf')).scene;
+            // lunarModuleGroup = new THREE.Group();
+            // while(lunarModuleScene.children.length > 0){
+            //     const child = lunarModuleScene.children[0];
+            //     lunarModuleGroup.add(child);
+            // }
+            // lunarModuleGroup.position.set(0,5.35,0);
+            // scene.add(lunarModuleGroup);
+            
+            const texture = await loadTexture('img/comic_tex.jpg');
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+
+            uniforms.u_shadowTex.value = texture;
+            
+            uniforms.u_resolution.value = new THREE.Vector2(window.innerWidth, window.innerHeight);
+
+            const traceObjectMat = new THREE.ShaderMaterial({
+              uniforms: uniforms,
+              vertexShader: await loadShader('shader_031/trace_object.vert'),
+              fragmentShader: await loadShader('shader_031/trace_object.frag'),
+              transparent: true,
+              // side: THREE.DoubleSide
+            });
+
+            // const traceSphere = new THREE.Mesh(new THREE.SphereGeometry(8,64,64), traceObjectMat);
+            // scene.add(traceSphere);
+            // traceSphere.position.set(-40,0.0,0.0);
+
+            // const traceTorus = new THREE.Mesh(new THREE.TorusGeometry( 10, 4.5, 32, 100 ), traceObjectMat);
+            // scene.add(traceTorus);
+            // traceTorus.position.set(40,0.0,0.0);
+
+            const gokuScene = (await loadGLTFModel('/shader_031/asset/goku.gltf')).scene;
+            const gokuGroup = new THREE.Group();
+            while(gokuScene.children.length > 0){
+                const child = gokuScene.children[0];
+                gokuGroup.add(child);
+            }
+            gokuGroup.traverse(child=>{
+                if(child.material){
+                    child.material = traceObjectMat;
+                }
+            })
+            gokuGroup.scale.set(0.55,0.55,0.55);
+            gokuGroup.position.set(-37, -30, -48)
+            scene.add(gokuGroup);
+
+            const panel = new THREE.Mesh(new THREE.PlaneGeometry(290,167,8,16), new THREE.MeshBasicMaterial({
+                map: await loadTexture('img/timg.jpg')
+            }));
+            panel.position.set(0,0,-220);
+            scene.add(panel);
+
+            const spriteMaterial = new THREE.SpriteMaterial( { map: await loadTexture('img/sfx.png') } );
+            const sprite = new THREE.Sprite( spriteMaterial );
+            sprite.position.set(-20, -2, 15);
+            sprite.scale.set(8,36,1);
+            scene.add( sprite );
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            //  const cLoudness = 0.18 * (normalizeLoudness(getLoudness()) - uniforms.u_loudness.value);
+
+            renderer.render(scene, camera);
+        }
+
+        function normalizeLoudness(raw){
+            const mathClamp = (num, a, b) => {
+                return Math.max(Math.min(num, Math.max(a, b)), Math.min(a, b));
+            }
+            return mathClamp(raw, 0, 20) / 32;
+        }
+
+        function getLoudness() {
+            if(!analyser){
+                return 0.0;
+            }
+            let array = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(array);
+
+            let average = 0;
+            // let max = 0;
+            for (let i = 0; i < array.length; i++) {
+                a = Math.abs(array[i] - 128);
+                average += a;
+                // max = Math.max(max, a);
+            }
+            average /= array.length;
+            return average;
+        }
+
+        function setupAnalyser(){
+            if(window.context){
+                document.getElementById('voice').play();
+                return;
+            }
+            const audioTag = document.getElementById('voice');
+            window.context = new AudioContext();
+            audio = context.createMediaElementSource(audioTag);
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.9;
+            analyser.fftSize = 512;
+            audio.connect(analyser);
+            analyser.connect(context.destination);
+            audioTag.play();
+        }
+    </script>
+</html>

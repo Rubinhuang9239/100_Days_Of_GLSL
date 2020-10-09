@@ -1,0 +1,251 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <script src="lib/perlinNoise.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera, controls;
+        let renderer, renderTarget, addOnScene, addOnTarget;
+        let postScene, postCamera, postMaterial;
+
+        const params = {
+			format: THREE.DepthFormat,type: THREE.UnsignedShortType
+		};
+        const formats = { DepthFormat: THREE.DepthFormat, DepthStencilFormat: THREE.DepthStencilFormat };
+		const types = { UnsignedShortType: THREE.UnsignedShortType, UnsignedIntType: THREE.UnsignedIntType, UnsignedInt248Type: THREE.UnsignedInt248Type };
+
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+            u_loudness: {type: 'float', value: 0.0}
+        }
+        const clock = new THREE.Clock();
+
+
+        window.addEventListener('load', ()=>{
+            init();
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            await setupPostEffect();
+            setupRenderTarget();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene();
+
+            addOnScene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+            camera.position.set(16.06, 2.234, 14.45);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false, antialias: true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0xAABBEE);
+            document.body.appendChild(renderer.domElement)
+
+            // controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.target.copy(new THREE.Vector3(15,-0.05,13.5));
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = -0.25;
+        }
+
+        const setupPostEffect = async() => {
+            postScene = new THREE.Scene();
+            postCamera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+            postMaterial = new THREE.ShaderMaterial( {
+                vertexShader: await loadShader('shader_033/vertex.vert'),
+                fragmentShader: await loadShader('shader_033/fragment.frag'),
+                transparent: true,
+                uniforms: {
+                    u_cameraNear: { value: camera.near },
+                    u_cameraFar: { value: camera.far },
+                    u_cameraPos: { value: camera.position },
+                    u_diffuse: { value: null },
+                    u_depth: { value: null },
+                    u_addOnDiffuse: { value: null },
+                    u_cornerVecs: { value: new Array(4).fill(new THREE.Vector3(0)) },
+                    u_time: {value: 0}
+                }
+            } );
+            postPlane = new THREE.Mesh(new THREE.PlaneGeometry( 2, 2 ), postMaterial );
+            postScene.add(postPlane);
+        }
+
+        function setupRenderTarget() {
+            const format = parseFloat( params.format );
+            const type = parseFloat( params.type );
+
+            if ( renderTarget ){renderTarget.dispose()};
+
+            renderTarget = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight );
+            renderTarget.texture.format = THREE.RGBFormat;
+            renderTarget.texture.minFilter = THREE.NearestFilter;
+            renderTarget.texture.magFilter = THREE.NearestFilter;
+            renderTarget.texture.generateMipmaps = false;
+            renderTarget.stencilBuffer = ( format === THREE.DepthStencilFormat ) ? true : false;
+            renderTarget.depthBuffer = true;
+            renderTarget.depthTexture = new THREE.DepthTexture();
+            renderTarget.depthTexture.format = format;
+            renderTarget.depthTexture.type = type;
+
+            if ( renderTarget ){renderTarget.dispose()};
+
+            addOnTarget = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight );
+            addOnTarget.texture.format = THREE.RGBFormat;
+            addOnTarget.texture.minFilter = THREE.NearestFilter;
+            addOnTarget.texture.magFilter = THREE.NearestFilter;
+            addOnTarget.texture.generateMipmaps = false;
+            addOnTarget.stencilBuffer = ( format === THREE.DepthStencilFormat ) ? true : false;
+            // addOnTarget.depthBuffer = true;
+            // addOnTarget.depthTexture = new THREE.DepthTexture();
+            // addOnTarget.depthTexture.format = format;
+            // addOnTarget.depthTexture.type = type;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xffffff);
+            pointLight_0.position.set(0, 10.0, 0);
+            pointLight_0.intensity = 0.75;
+            scene.add(pointLight_0);
+
+            const pointLight_1 = pointLight_0.clone();
+            pointLight_1.position.set(0, 10.0, 0);
+            pointLight_1.intensity = 0.95;
+            addOnScene.add(pointLight_1);
+
+            var directionalLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
+            scene.add( directionalLight );
+
+
+            // const pointLight_1 = new THREE.PointLight(0x333333);
+            // pointLight_1.position.set(0, -10.0, 0);
+            // scene.add(pointLight_1);
+
+            let ambientLight = new THREE.AmbientLight(0xFFFFFF);
+            ambientLight.intensity = 1.5;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+
+            const landScene = (await loadGLTFModel('/shader_033/asset/land.gltf')).scene;
+            const landGroup = new THREE.Group();
+            while(landScene.children.length > 0){
+                const child = landScene.children[0];
+                landGroup.add(child);
+            }
+            landGroup.position.y = -16;
+            scene.add(landGroup);
+
+            const saitamaScene = (await loadGLTFModel('/shader_033/asset/saitama.gltf')).scene;
+            const saitamaGroup = new THREE.Group();
+            while(saitamaScene.children.length > 0){
+                const child = saitamaScene.children[0];
+                saitamaGroup.add(child);
+            }
+            scene.add(saitamaGroup);
+            saitamaGroup.position.set(15,-1.85,13.5);
+            saitamaGroup.rotation.y = 0.2 * Math.PI
+            saitamaGroup.scale.set(12,12,12);
+
+            const plane = new THREE.Mesh(new THREE.PlaneBufferGeometry(308,145,1,1), new THREE.MeshBasicMaterial({
+                map: await loadTexture('/shader_033/asset/sky.jpg')
+            }));
+            plane.rotation.y = 0.25 * Math.PI;
+            plane.position.x = -80;
+            plane.position.y = 68;
+            plane.position.z = -80;
+            scene.add(plane);
+
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(16,72,72), new THREE.MeshStandardMaterial({
+                map: await loadTexture('/shader_033/asset/Lava_005_COLOR.jpg'),
+                aoMap: await loadTexture('/shader_033/asset/Lava_005_OCC.jpg'),
+                normalMap: await loadTexture('/shader_033/asset/Lava_005_NORM.jpg'),
+                side: THREE.BackSide,
+            }));
+            sphere.rotation.x = -0.5 * Math.PI;
+            addOnScene.add(sphere);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop);
+
+            camera.position.y -= 0.002;
+            
+            camera.lookAt(new THREE.Vector3(15,-0.0,13.5));
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            
+            // renderScene
+            renderer.setRenderTarget( renderTarget );
+            renderer.render(scene, camera);
+
+            // renderAddOn
+            renderer.setRenderTarget( addOnTarget );
+            renderer.render(addOnScene, camera);
+
+            // render post Effect
+            postMaterial.uniforms.u_cameraPos.value = camera.position;
+            postMaterial.uniforms.u_diffuse.value = renderTarget.texture;
+            postMaterial.uniforms.u_depth.value = renderTarget.depthTexture;
+            postMaterial.uniforms.u_addOnDiffuse.value = addOnTarget.texture;
+            postMaterial.uniforms.u_time.value = cTime;
+
+            postMaterial.uniforms.u_cornerVecs.value = castCorners();
+
+            renderer.setRenderTarget( null );
+            renderer.render( postScene, postCamera );
+        }
+
+        function castCorners(){
+
+            const corners = [
+                {x: 0, y: 0}, // TL
+                {x: 1, y: 0}, // TR
+                {x: 0, y: 1}, // BL
+                {x: 1, y: 1}, // BR
+            ];
+
+            const raycaster = new THREE.Raycaster();
+
+            const cameraDir =  new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+
+            const farVectors = corners.map((corner)=>{
+                const normalizedCorner = new THREE.Vector2(
+                    (corner.x) * 2 - 1,
+                    - (corner.y) * 2 + 1
+                );
+
+                raycaster.setFromCamera( normalizedCorner, camera );
+                const cornerDir = raycaster.ray.direction;
+
+                const rad = cameraDir.angleTo(cornerDir);
+                
+                const meg = camera.far / Math.cos(rad);
+                return ((cornerDir.clone().multiplyScalar(meg)).add(camera.position));
+            });
+            return farVectors;
+        }
+    </script>
+</html>

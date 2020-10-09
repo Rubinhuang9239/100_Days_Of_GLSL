@@ -1,0 +1,375 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <body>
+        <audio id='voice' hidden loop>
+            <source src='/media/Ghostbusters.mp3'>
+        </audio>
+    </body>
+    <script id="post-vert" type="x-shader/x-vertex">
+        varying vec2 vUv;
+
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    <script id="post-frag" type="x-shader/x-fragment">
+        #include <packing>
+
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tDepth;
+        uniform float cameraNear;
+        uniform float cameraFar;
+        uniform float u_time;
+
+
+        float readDepth( sampler2D depthSampler, vec2 coord ) {
+            float fragCoordZ = texture2D( depthSampler, coord ).x;
+            float viewZ = perspectiveDepthToViewZ( fragCoordZ, cameraNear, cameraFar );
+            return viewZToOrthographicDepth( viewZ, cameraNear, cameraFar );
+        }
+
+        void main() {
+            vec3 diffuse = texture2D( tDiffuse, vUv ).rgb;
+
+            gl_FragColor.rgb = diffuse; 
+
+            float depth = readDepth( tDepth, vUv );
+
+            if(depth>0.05){
+                for(int i=0; i < 4; i++){
+                    float f = float(i);
+                    float scanlineWidth = 0.08/f;
+                    float scannerRange = fract(u_time * 0.5 - 0.006*f);
+                    float scanLine = 0.0;
+    
+                    float scanDist = sqrt(pow(scannerRange,2.0) - pow(vUv.x-0.5,2.0));
+                    scanLine = smoothstep(scanDist-scanlineWidth, scanDist, depth) * (1.0-step(scanDist, depth));
+                    gl_FragColor.xyz += vec3(pow(scanLine * 0.6,3.2), scanLine*0.25, cos(u_time)*0.5+0.5) * scanLine;
+                }
+            }
+
+            gl_FragColor.a = 1.0;
+        }
+    </script>
+    <script type='text/javascript'>
+        let scene, camera;
+        let renderer;
+        let controls;
+        let analyser;
+        let target;
+        let postScene, postCamera, postMaterial;
+        let slimer;
+
+        const dmcGroup = new THREE.Group()
+        const params = {
+			format: THREE.DepthFormat,
+			type: THREE.UnsignedShortType
+		};
+        const formats = { DepthFormat: THREE.DepthFormat, DepthStencilFormat: THREE.DepthStencilFormat };
+		const types = { UnsignedShortType: THREE.UnsignedShortType, UnsignedIntType: THREE.UnsignedIntType, UnsignedInt248Type: THREE.UnsignedInt248Type };
+
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+            u_loudness: {type: 'float', value: 0.0}
+        }
+        const clock = new THREE.Clock();
+
+        class PerlinNoise {
+            constructor(rand = Math.random) {
+                let perm = new Int8Array(257);
+
+                for (let i = 0; i < 256; i++) {
+                perm[i] = i & 1 ? 1 : -1;
+                }
+
+                for (let i = 0; i < 256; i++) {
+                let j = (rand() * 4294967296) & 255;
+
+                [ perm[i], perm[j] ] = [ perm[j], perm[i] ];
+                }
+                perm[256] = perm[0];
+
+                function noise1d(x) {
+                let x0 = x|0;
+                let x1 = x - x0;
+                let xi = x0 & 255;
+                let fx = (3 - 2 * x1) * x1 * x1;
+                let a = x1 * perm[xi];
+                let b = (x1 - 1) * perm[xi + 1];
+
+                return a + fx * (b - a);
+                }
+
+                function noise(x) {
+                let sum = 0;
+
+                sum += (1 + noise1d(x)) * 0.25;
+                sum += (1 + noise1d(x * 2)) * 0.125;
+                sum += (1 + noise1d(x * 4)) * 0.0625;
+                sum += (1 + noise1d(x * 8)) * 0.03125;
+
+                return sum;
+                }
+
+                this.noise = noise;
+            }
+        }
+
+        const pNoise = new PerlinNoise();
+
+        window.addEventListener('load', ()=>{
+            init();
+            document.body.addEventListener('click', function(){
+                setupAnalyser();
+            });
+        });
+
+        function init() {
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20)
+            camera.position.set(-6.6, 2.65, 8.5);
+
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x334533);
+
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            controls.target.copy(new THREE.Vector3(-3.2,2,3.2));
+            controls.autoRotate = true; 
+
+            addLighting();
+            void add3dObjects();
+            setupPost();
+            setupRenderTarget();
+            animationLoop();
+        }
+
+        function setupPost() {
+            // Setup post processing stage
+            postCamera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+            postMaterial = new THREE.ShaderMaterial( {
+                vertexShader: document.querySelector( '#post-vert' ).textContent.trim(),
+                fragmentShader: document.querySelector( '#post-frag' ).textContent.trim(),
+                transparent: true,
+                uniforms: {
+                    cameraNear: { value: camera.near },
+                    cameraFar: { value: camera.far },
+                    tDiffuse: { value: null },
+                    tDepth: { value: null },
+                    u_time: {value: 0}
+                }
+            } );
+            var postPlane = new THREE.PlaneBufferGeometry( 2, 2 );
+            var postQuad = new THREE.Mesh( postPlane, postMaterial );
+            postScene = new THREE.Scene();
+            postScene.add( postQuad );
+        }
+
+        function setupRenderTarget() {
+            if ( target ) target.dispose();
+            const format = parseFloat( params.format );
+            const type = parseFloat( params.type );
+            target = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight );
+            target.texture.format = THREE.RGBFormat;
+            target.texture.minFilter = THREE.NearestFilter;
+            target.texture.magFilter = THREE.NearestFilter;
+            target.texture.generateMipmaps = false;
+            target.stencilBuffer = ( format === THREE.DepthStencilFormat ) ? true : false;
+            target.depthBuffer = true;
+            target.depthTexture = new THREE.DepthTexture();
+            target.depthTexture.format = format;
+            target.depthTexture.type = type;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xCC44AA, 0.95, 14);
+            pointLight_0.position.set(-4.5, 3, 1);
+            scene.add(pointLight_0);
+
+            // var sphereSize = 1;
+            // var pointLightHelper = new THREE.PointLightHelper( pointLight_0, sphereSize );
+            // scene.add( pointLightHelper );
+        }
+
+        add3dObjects = async() => {
+            const loadShader = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FileLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const loadFBXModel = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FBXLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {resolve( data );},
+                        undefined,
+                        (err)=>{reject(err);}
+                    );
+                });
+            };
+
+            const loadGLTFModel = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.GLTFLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {resolve( data );},
+                        undefined,
+                        (err)=>{reject(err);}
+                    );
+                });
+            };
+
+            const loadTexture = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.TextureLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {resolve( data );},
+                        undefined,
+                        (err)=>{reject(err);}
+                    );
+                });
+            };
+
+            // for(let i=0; i < 7; i++){
+            //     const cube = new THREE.Mesh(new THREE.BoxGeometry(2,4,2), new THREE.MeshStandardMaterial());
+            //     cube.rotation.y = -0.25 * Math.PI;
+            //     cube.position.set((Math.random()-0.5)*10,Math.random()*1,(Math.random()-0.5)*10);
+            //     scene.add(cube);
+            // }
+
+            const streetScene = (await loadGLTFModel('/shader_026/asset/street.gltf')).scene;
+            const streetGroup = new THREE.Group();
+            while(streetScene.children.length > 0){
+                const child = streetScene.children[0];
+                streetGroup.add(child);
+            }
+            scene.add(streetGroup);
+
+            const pke = (await loadGLTFModel('/shader_026/asset/pke.gltf')).scene.children[0];
+            camera.add(pke);
+            pke.position.set(-0.045,-0.075,-0.35);
+            pke.rotation.set(-0.35,0,0);
+
+            const pointLight_2 = new THREE.PointLight(0xAAFFAA, 1.6, 1.8);
+            camera.add(pointLight_2);
+            pointLight_2.position.set(-0.045,-0.05,-0.1);
+
+            slimer = (await loadGLTFModel('/shader_026/asset/slimer.gltf')).scene.children[0];
+            slimer.position.set(-2.0,1.25,4.2);
+            slimer.traverse((child)=>{
+                if(child.material){
+                    child.material.emissive = new THREE.Color(0,0.25,0.02);
+                }
+            })
+            scene.add(slimer);
+
+            const pointLight_1 = new THREE.PointLight(0x22AA33, 1, 5);
+            slimer.add(pointLight_1);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            // uniforms.u_loudness.value += 0.18 * (normalizeLoudness(getLoudness()) - uniforms.u_loudness.value);
+            const cLoudness = 0.18 * (normalizeLoudness(getLoudness()) - uniforms.u_loudness.value);
+            if(slimer){
+                slimer.position.y = (1.5 + 0.25 * Math.sin(cTime*2.0));
+                const noiseVal = pNoise.noise(cTime * 0.25);
+                slimer.rotation.y = (noiseVal - 0.5) * 4;
+                slimer.scale.set(
+                    0.01 * (1 + 0.45 * cLoudness),
+                    0.01 * (1 + 0.7 * cLoudness),
+                    0.01 * (1 + 0.45 * cLoudness)
+                )
+            }
+            renderer.setRenderTarget( target );
+            renderer.render(scene, camera);
+
+            // // render post FX
+            postMaterial.uniforms.tDiffuse.value = target.texture;
+            postMaterial.uniforms.tDepth.value = target.depthTexture;
+            postMaterial.uniforms.u_time.value = cTime;
+
+            renderer.setRenderTarget( null );
+            renderer.render( postScene, postCamera );
+        }
+
+        function normalizeLoudness(raw){
+            const mathClamp = (num, a, b) => {
+                return Math.max(Math.min(num, Math.max(a, b)), Math.min(a, b));
+            }
+            return mathClamp(raw, 0, 20) / 32;
+        }
+
+        function getLoudness() {
+            if(!analyser){
+                return 0.0;
+            }
+            let array = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(array);
+
+            let average = 0;
+            // let max = 0;
+            for (let i = 0; i < array.length; i++) {
+                a = Math.abs(array[i] - 128);
+                average += a;
+                // max = Math.max(max, a);
+            }
+            average /= array.length;
+            return average;
+        }
+
+        function setupAnalyser(){
+            if(window.context){
+                document.getElementById('voice').play();
+                return;
+            }
+            let audioTag = document.getElementById('voice');
+            window.context = new AudioContext();
+            audio = context.createMediaElementSource(audioTag);
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.9;
+            analyser.fftSize = 512;
+            audio.connect(analyser);
+            analyser.connect(context.destination);
+            audioTag.play();
+        }
+    </script>
+</html>

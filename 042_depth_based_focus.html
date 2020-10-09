@@ -1,0 +1,239 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+        #sliderBox{
+            position: absolute;
+            margin: auto;
+            top: auto;
+            bottom: 50px;
+            left:0px;
+            right: 0px;
+            width: 220px;
+            height: 32px;
+        }
+
+        #sliderBox input{
+            margin: auto;
+            display: block;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <body>
+        <div id="sliderBox">
+            <input id="snowSlider" value="12.0" type="range" min="10.0" max="28.0" step="0.05">
+        </div>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera, controls;
+        let renderer, renderTarget;
+        let postScene, postCamera, postMaterial;
+        let analyser; // audio
+
+        const params = {
+			format: THREE.DepthFormat,type: THREE.UnsignedShortType
+		};
+        const formats = { DepthFormat: THREE.DepthFormat, DepthStencilFormat: THREE.DepthStencilFormat };
+		const types = { UnsignedShortType: THREE.UnsignedShortType, UnsignedIntType: THREE.UnsignedIntType, UnsignedInt248Type: THREE.UnsignedInt248Type };
+
+        const uniforms = {
+            u_time: {value: 0.0},
+        }
+        const clock = new THREE.Clock();
+
+        window.addEventListener('load', ()=>{
+            init();
+            let snowSlider = document.getElementById("sliderBox");
+            snowSlider.addEventListener('input', e=>{
+                if(!postMaterial){
+                    return;
+                }
+                postMaterial.uniforms.u_focalDist.value = e.target.value;
+            });
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            await setupPostEffect();
+            setupRenderTarget();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400)
+            camera.position.set(0.0, 1.0, 9.0);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x050511);
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            controls.target.copy(new THREE.Vector3(0.0,1.5,0.0));
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = -0.05;
+        }
+
+        const setupPostEffect = async() => {
+            postScene = new THREE.Scene();
+            postCamera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+            postMaterial = new THREE.ShaderMaterial( {
+                vertexShader: await loadShader('shader_042/vertex.vert'),
+                fragmentShader: await loadShader('shader_042/fragment.frag'),
+                transparent: true,
+                uniforms: {
+                    u_cameraNear: { value: camera.near },
+                    u_cameraFar: { value: camera.far },
+                    u_cameraPos: { value: camera.position },
+                    u_diffuse: { value: null },
+                    u_depth: { value: null },
+                    u_cornerVecs: { value: new Array(4).fill(new THREE.Vector3(0)) },
+                    u_time: {value: 0},
+                    u_focalDist: {value: 18.0}
+                }
+            } );
+            postPlane = new THREE.Mesh(new THREE.PlaneBufferGeometry( 2, 2 ), postMaterial );
+            postScene.add(postPlane);
+        }
+
+        function setupRenderTarget() {
+            if ( renderTarget ){renderTarget.dispose()};
+
+            const format = parseFloat( params.format );
+            const type = parseFloat( params.type );
+            renderTarget = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight );
+            renderTarget.texture.format = THREE.RGBFormat;
+            renderTarget.texture.minFilter = THREE.NearestFilter;
+            renderTarget.texture.magFilter = THREE.NearestFilter;
+            renderTarget.texture.generateMipmaps = false;
+            renderTarget.stencilBuffer = ( format === THREE.DepthStencilFormat ) ? true : false;
+            renderTarget.depthBuffer = true;
+            renderTarget.depthTexture = new THREE.DepthTexture();
+            renderTarget.depthTexture.format = format;
+            renderTarget.depthTexture.type = type;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xEECCAA, 0.8, 42);
+            pointLight_0.position.set(2.5, 4.0, 6);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFFFFF);
+            ambientLight.intensity = 1.0;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            const pitScene = (await loadGLTFModel('/shader_042/asset/pit_mine.gltf')).scene;
+            const pitGroup = pitScene.children[0];
+            pitGroup.traverse(child=>{
+                if(child.material){
+                    child.material.map.encoding = THREE.LinearEncoding;
+                    child.material.needsUpdate = true;
+                }
+            });
+
+            scene.add(pitGroup);
+
+            const spaceManScene = (await loadGLTFModel('/shader_042/asset/space_man.gltf')).scene;
+            const spaceManGroup = spaceManScene.children[0];
+
+            spaceManGroup.traverse(child=>{
+                if(child.material){
+                    child.material.map.encoding = THREE.LinearEncoding;
+                    child.material.needsUpdate = true;
+                }
+            });
+
+            spaceManGroup.scale.set(0.0014,0.0014,0.0014);
+            spaceManGroup.position.y = 0.42;
+            spaceManGroup.position.z = 3.6;
+            spaceManGroup.rotation.y = -0.48 * Math.PI;
+            
+            scene.add(spaceManGroup);
+
+            await addSkySphere();
+        }
+
+        async function addSkySphere(){
+            const sphereTexture = await loadTexture('/shader_042/asset/mars_sky.jpg');
+            skySphere = new THREE.Mesh(
+                new THREE.SphereGeometry(300,32,32),
+                new THREE.MeshBasicMaterial({
+                    map: sphereTexture,
+                    side: THREE.BackSide,
+                }),
+            );
+            scene.add(skySphere);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            
+            // renderScene
+            renderer.setRenderTarget( renderTarget );
+            renderer.render(scene, camera);
+
+            // render post Effect
+            postMaterial.uniforms.u_cameraPos.value = camera.position;
+            postMaterial.uniforms.u_diffuse.value = renderTarget.texture;
+            postMaterial.uniforms.u_depth.value = renderTarget.depthTexture;
+            postMaterial.uniforms.u_time.value = cTime;
+            postMaterial.uniforms.u_cornerVecs.value = castCorners();
+
+            renderer.setRenderTarget( null );
+            renderer.render( postScene, postCamera );
+        }
+
+        function castCorners(){
+
+            const corners = [
+                {x: 0, y: 0}, // TL
+                {x: 1, y: 0}, // TR
+                {x: 0, y: 1}, // BL
+                {x: 1, y: 1}, // BR
+            ];
+
+            const raycaster = new THREE.Raycaster();
+
+            const cameraDir =  new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+
+            const farVectors = corners.map((corner)=>{
+                const normalizedCorner = new THREE.Vector2(
+                    (corner.x) * 2 - 1,
+                    - (corner.y) * 2 + 1
+                );
+
+                raycaster.setFromCamera( normalizedCorner, camera );
+                const cornerDir = raycaster.ray.direction;
+
+                const rad = cameraDir.angleTo(cornerDir);
+                
+                const meg = camera.far / Math.cos(rad);
+                return ((cornerDir.clone().multiplyScalar(meg)).add(camera.position));
+            });
+            return farVectors;
+        }
+    </script>
+</html>

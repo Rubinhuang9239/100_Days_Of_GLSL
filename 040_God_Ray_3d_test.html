@@ -1,0 +1,89 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+
+        let scene, camera, controls;
+        let renderer;
+        
+        const uniforms = {
+            u_time: {value: 0.0},
+            u_woodTex: {value: null},
+        }
+        const clock = new THREE.Clock();
+
+        window.addEventListener('load', ()=>{
+            init();
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(0.0, 0.0, 6.4);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x222222);
+            document.body.appendChild(renderer.domElement)
+
+            // controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = -1;
+        }
+
+        function addLighting() {
+            // const pointLight_0 = new THREE.PointLight(0xFFEED0, 0.28);
+            // pointLight_0.position.set(50, 50, 50);
+            // scene.add(pointLight_0);
+
+            // let ambientLight = new THREE.AmbientLight(0xFFEECC);
+            // ambientLight.intensity = 0.1;
+            // scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+
+            const woodTexture = await loadTexture('img/black_wood.jpg');
+            uniforms.u_woodTex.value = woodTexture;
+
+            const postShaderMat = new THREE.ShaderMaterial( {
+                vertexShader: await loadShader('shader_039/vertex.vert'),
+                fragmentShader: await loadShader('shader_039/fragment.frag'),
+                uniforms: uniforms
+            } );
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(8.0,4.5,1,1), postShaderMat);
+            scene.add(plane);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            // controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            renderer.render(scene, camera);
+        }
+    </script>
+</html>

@@ -1,0 +1,133 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+        #sliderBox{
+            position: absolute;
+            margin: auto;
+            top: auto;
+            bottom: 50px;
+            left:0px;
+            right: 0px;
+            width: 220px;
+            height: 32px;
+        }
+
+        #sliderBox input{
+            margin: auto;
+            display: block;
+        }
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <body>
+        <div id="sliderBox">
+            <input id="snowSlider" value="-0.25" type="range" min="-0.25" max="0.82" step="0.01">
+        </div>
+    </body>
+    <script type='text/javascript'>
+
+        let scene, camera, controls;
+        let renderer;
+        
+        const uniforms = {
+            u_noiseTex: {value: null},
+            u_time: {value: 0.0},
+            u_effectness: {value: 1.25},
+        }
+        const clock = new THREE.Clock();
+
+        window.addEventListener('load', ()=>{
+            init();
+            let snowSlider = document.getElementById("sliderBox");
+            snowSlider.addEventListener('input', function(e){
+                uniforms.u_effectness.value = 1.0 - e.target.value;
+            })
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(-7.0, 6.4, -10.0);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0xA0CFE3);
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = -1;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xFFFFFF, 5.5);
+            pointLight_0.position.set(0, 100, 0);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFFFFF);
+            ambientLight.intensity = 1.0;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            const mexicanHatScene = await loadGLTFModel('shader_041/asset/mexican_hat.gltf');
+            const mexicanHatmodel = mexicanHatScene.scene.children[0];
+            
+            // Diffuse Model
+            mexicanHatmodel.traverse(child=>{
+                if(child.material && child.material.type == 'MeshBasicMaterial'){
+                    child.material.map.encoding = THREE.LinearEncoding;
+                }
+            });
+            scene.add(mexicanHatmodel);
+
+            // Snow Model
+            const snowModel = mexicanHatmodel.clone();
+            snowModel.position.y += 0.001;
+
+            uniforms.u_noiseTex.value = await loadTexture('shader_041/asset/noise.jpg');
+            uniforms.u_noiseTex.value.wrapS = THREE.ClampToEdgeWrapping;
+            uniforms.u_noiseTex.value.wrapT = THREE.ClampToEdgeWrapping;
+
+            const snowMat_0 = new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                transparent: true,
+                vertexShader: await loadShader('shader_041/vertex.vert'),
+                fragmentShader: await loadShader('shader_041/fragment.frag')
+            });
+            snowModel.traverse(child=>{
+                if(child.material && child.material.type == 'MeshBasicMaterial'){
+                    child.material = snowMat_0;
+                }
+            });
+            scene.add(snowModel);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            renderer.render(scene, camera);
+        }
+    </script>
+</html>

@@ -1,0 +1,175 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+        .overlayText{
+            position: absolute;
+            height: 100px;
+            width: 400px;
+            margin:auto;
+            left: 0px;
+            right:0px;
+            bottom:0px;
+            top:0px;
+            line-height: 100px;
+            color: #FFF;
+            text-shadow: 3px 3px 8px rgba(0,0,0,0.5);
+            font-size: 56;
+            text-align: center;
+            font-family: Helvetica, Arial, sans-serif;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <body>
+        <div class='overlayText'></div>
+    </body>
+    <script type='text/javascript'>
+        let overlayText;
+
+        let scene, camera, controls;
+        let renderer;
+        let analyser; // audio
+        
+        const uniforms = {
+            u_time: {value: 0.0},
+            u_blendTex: {value: null},
+            u_baseTex: {value: null}
+        }
+        const clock = new THREE.Clock();
+
+        const blendingTitle = [
+            'Hard Light',
+            'Soft Light',
+            'Overlay',
+            'Multiply',
+            'Screen',
+            'Darken',
+            'Lighten',
+            'Difference',
+            'Negation',
+            'Exclusion',
+            'Dodge',
+            'Burn'
+        ]
+
+        window.addEventListener('load', ()=>{
+            init();
+            overlayText = document.getElementsByClassName('overlayText')[0];
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(0.0, 0.0, 8.);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x202C44);
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = -1;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xFFEED0, 0.28);
+            pointLight_0.position.set(50, 50, 50);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFEECC);
+            ambientLight.intensity = 0.1;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+
+            const blendTexture = await loadTexture('img/comicCell.jpg');
+            uniforms.u_blendTex.value = blendTexture;
+
+            const baseTexture = await loadTexture('img/watercolorStar.jpg');
+            uniforms.u_baseTex.value = baseTexture;
+
+            const blendingShaderMat = new THREE.ShaderMaterial( {
+                vertexShader: await loadShader('shader_036/vertex.vert'),
+                fragmentShader: await loadShader('shader_036/fragment.frag'),
+                uniforms: uniforms,
+                side: THREE.DoubleSide
+            } );
+
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(10,2.93,1,1), blendingShaderMat);
+            scene.add(plane);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            // controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            renderer.render(scene, camera);
+
+            overlayText.innerText = blendingTitle[Math.floor(cTime) % 12];
+        }
+
+        function normalizeLoudness(raw){
+            const mathClamp = (num, a, b) => {
+                return Math.max(Math.min(num, Math.max(a, b)), Math.min(a, b));
+            }
+            return mathClamp(raw, 0, 20) / 32;
+        }
+
+        function getLoudness() {
+            if(!analyser){
+                return 0.0;
+            }
+            let array = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(array);
+
+            let average = 0;
+            // let max = 0;
+            for (let i = 0; i < array.length; i++) {
+                a = Math.abs(array[i] - 128);
+                average += a;
+                // max = Math.max(max, a);
+            }
+            average /= array.length;
+            return average;
+        }
+
+        function setupAnalyser(){
+            if(window.context){
+                document.getElementById('voice').play();
+                return;
+            }
+            const audioTag = document.getElementById('voice');
+            window.context = new AudioContext();
+            audio = context.createMediaElementSource(audioTag);
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.9;
+            analyser.fftSize = 512;
+            audio.connect(analyser);
+            analyser.connect(context.destination);
+            audioTag.play();
+        }
+    </script>
+</html>

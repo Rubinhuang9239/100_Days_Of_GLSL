@@ -1,0 +1,417 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/FBXLoader.js"></script>
+    <script src="lib/tweenjs.min.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <script src="lib/perlinNoise.js"></script>
+    <script src="lib/grass.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera;
+        let blustLight;
+        let renderer, postRenderTarget;
+        let postScene, postCamera, postMat, particleScene;
+        let traceObjectMat;
+        let grassSample;
+        let composeScene, composeCamera, comicRenderTarget;
+
+        let comicPanel_0, comicPanel_1, comicPanel_2;
+
+        let grassList = [];
+
+        const blustDir = (new THREE.Vector3(-0.08052, 0.27320, 0.95858)).normalize();
+        const blustDirRoot = new THREE.Vector3(-13.0, 110.0, 0.0);
+
+        const params = {
+			format: THREE.DepthFormat,type: THREE.UnsignedShortType
+		};
+        const formats = { DepthFormat: THREE.DepthFormat, DepthStencilFormat: THREE.DepthStencilFormat };
+		const types = { UnsignedShortType: THREE.UnsignedShortType, UnsignedIntType: THREE.UnsignedIntType, UnsignedInt248Type: THREE.UnsignedInt248Type };
+
+        const clock = new THREE.Clock();
+
+        const composeCamPos = {
+                    x: -3.25,
+                    y: 1.5,
+                    z: 17.55
+                };
+
+        window.addEventListener('load', ()=>{
+            init();
+            createjs.Ticker.timingMode = createjs.Ticker.RAF;
+            document.body.addEventListener('click',()=>{              
+
+                const composeCamPos_1 = {
+                    x: 0,
+                    y: 0,
+                    z: 6.7
+                };
+
+                const composeCamPos_2 = { // fin
+                    x: 1.625,
+                    y: 0,
+                    z: 15.1
+                };
+
+                setTimeout(startAnimate, 3000);
+                createjs.Tween.get(composeCamPos).to(composeCamPos_1, 5600.0, createjs.Ease.getPowIn(4.25)).call(()=>{
+                        // console.log('pos1');
+                        setTimeout(()=>{
+                            postMat.uniforms.u_animationDone.value = true;
+                        }, 3000);
+                        createjs.Tween.get(composeCamPos).wait(2050).to(composeCamPos_2, 7500, createjs.Ease.getPowIn(3.8)).call(
+                            ()=>{
+                                // console.log('pos2');
+                                console.log('completed!');
+                            }
+                        );
+                    }
+                );
+                
+            },{once: true});
+        });
+
+        const init = async() =>  {
+            setupScene();
+            setupParticleScene();
+            setupComposeScene();
+            addLighting();
+            await add3dObjects();
+            await setupPostEffect();
+            setupRenderTarget();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(60, 1.0 / 1.0, 0.1, 1200);
+            camera.position.set(-76, 168, 240);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({
+                alpha:false,
+                antialias: true,
+                // preserveDrawingBuffer: false
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(new THREE.Color(1.0,0.87,0.0));
+            document.body.appendChild(renderer.domElement);
+            renderer.autoClear = false;
+        }
+
+        const setupPostEffect = async() => {
+            postScene = new THREE.Scene();
+            postCamera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+            postMat = new THREE.ShaderMaterial( {
+                vertexShader: await loadShader('shader_034/vertex.vert'),
+                fragmentShader: await loadShader('shader_034/fragment.frag'),
+                uniforms: {
+                    u_cameraNear: { value: camera.near },
+                    u_cameraFar: { value: camera.far },
+                    u_cameraPos: { value: camera.position },
+                    u_diffuse: { value: null },
+                    u_depth: { value: null },
+                    u_cornerVecs: { value: new Array(4).fill(new THREE.Vector3(0)) },
+                    u_radCenter: { value: new THREE.Vector3(0,0,0) },
+                    u_effective: { value: 0.0},
+                    u_time: {value: 0},
+                    u_resolution: {value: new THREE.Vector2(window.innerWidth, window.innerHeight)},
+                    u_styleTex: {value: await loadTexture('shader_034/asset/noiseDot.jpg')},
+                    u_effectTex: {value: await loadTexture('shader_034/asset/lightning.jpg')},
+                    u_animationDone: {value: false}
+                }
+            } );
+            postPlane = new THREE.Mesh(new THREE.PlaneBufferGeometry( 2, 2 ), postMat );
+            postScene.add(postPlane);
+        }
+
+        function setupParticleScene(){
+            particleScene = new THREE.Scene();
+        }
+
+        function setupComposeScene(){
+            composeScene = new THREE.Scene();
+            composeCamera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 1200)
+            composeCamera.position.set(-3.25,1.5,17.55);
+            composeCamera.lookAt(new THREE.Vector3(0,0,0));
+
+            comicRenderTarget = new THREE.WebGLRenderTarget( 1024, 1024 );
+            comicRenderTarget.texture.format = THREE.RGBFormat;
+            comicRenderTarget.texture.encoding = THREE.sRGBEncoding;
+            comicRenderTarget.texture.minFilter = THREE.LinearFilter;
+            comicRenderTarget.texture.magFilter = THREE.LinearFilter;
+            comicRenderTarget.texture.generateMipmaps = false;
+        }
+
+        function setupRenderTarget() {
+            if ( postRenderTarget ){postRenderTarget.dispose()};
+
+            const format = parseFloat( params.format );
+            const type = parseFloat( params.type );
+            postRenderTarget = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight );
+            postRenderTarget.texture.format = THREE.RGBFormat;
+            postRenderTarget.texture.encoding = THREE.sRGBEncoding;
+            postRenderTarget.texture.minFilter = THREE.LinearFilter;
+            postRenderTarget.texture.magFilter = THREE.LinearFilter;
+            postRenderTarget.texture.generateMipmaps = false;
+            postRenderTarget.stencilBuffer = ( format === THREE.DepthStencilFormat ) ? true : false;
+            postRenderTarget.depthBuffer = true;
+            postRenderTarget.depthTexture = new THREE.DepthTexture();
+            postRenderTarget.depthTexture.format = format;
+            postRenderTarget.depthTexture.type = type;
+        }
+
+        function addLighting() {
+            blustLight = new THREE.PointLight(0x3355FF, 8.0, 720.0);
+            blustLight.position.set(-25, 134.0, 90.0);
+            scene.add(blustLight);
+
+            particleScene.add(blustLight.clone());
+
+            let ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            // shader scene
+            const diffuseMap = await loadTexture('shader_034/asset/Goku_SS_Kamehameha_01.jpg');
+            const shadowTexMap = await loadTexture('img/comic_tex.jpg');
+            shadowTexMap.wrapS = THREE.ClampToEdgeWrapping;
+            shadowTexMap.wrapT = THREE.ClampToEdgeWrapping;
+
+            traceObjectMat = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.merge([
+                     THREE.UniformsLib['lights'],
+                    {
+                        u_mapTex: {value: null},
+                        u_shadowTex: {value: null},
+                        u_resolution: {value: new THREE.Vector2(window.innerWidth, window.innerHeight)},
+                        u_effective: {value: 0.0},
+                        u_time: {value: 0.0}
+                    }
+                ]),
+                vertexShader: await loadShader('shader_034/trace_object.vert'),
+                fragmentShader: await loadShader('shader_034/trace_object.frag'),
+                transparent: true,
+                lights: true
+            });
+
+            traceObjectMat.uniforms.u_mapTex.value = diffuseMap;
+            traceObjectMat.uniforms.u_shadowTex.value = shadowTexMap;
+
+            const goku = (await loadFBXModel('/shader_034/asset/goku.fbx'));
+            goku.traverse(child=>{
+                if(child.material){
+                    child.material = traceObjectMat;
+                }
+            });
+            scene.add(goku);
+
+            // particle scene
+            grassSample = await GrassParticle.generateSample();
+            for(let i=0; i<12; i++){
+                addGrass();
+            }
+
+            // comopse scene
+            comicPanel_0 = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.56,8.17,1,1),
+                new THREE.MeshBasicMaterial({
+                    map: await loadTexture('/shader_034/asset/comic_0.png'),
+                    transparent: true
+                })
+            );
+            comicPanel_0.position.set(-6.55,2.15,5.25);
+            comicPanel_1 = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.29,7.64,1,1),
+                new THREE.MeshBasicMaterial({
+                    map: await loadTexture('/shader_034/asset/comic_1.png'),
+                    transparent: true
+                })
+            );
+            comicPanel_1.position.set(-4.85,-3.75,4.15);
+            comicPanel_2 = new THREE.Mesh(
+                new THREE.PlaneGeometry(5.46,8.49,1,1),
+                new THREE.MeshBasicMaterial({
+                    map: await loadTexture('/shader_034/asset/comic_2.png'),
+                    transparent: true
+                })
+            );
+            comicPanel_2.position.set(6.05,-1.75,3.25);
+
+            const comicPanel_3 = new THREE.Mesh(
+                new THREE.PlaneGeometry(11,11,1,1),
+                new THREE.MeshBasicMaterial({
+                    map: comicRenderTarget.texture
+                })
+            );
+            comicPanel_3.position.set(0,0,0);
+
+            composeScene.add(comicPanel_0);
+            composeScene.add(comicPanel_1);
+            composeScene.add(comicPanel_2);
+            composeScene.add(comicPanel_3);
+        }
+
+        function addGrass(){
+            const grass = new GrassParticle();
+            grass.create(grassSample);
+            grassList.push(grass);
+            particleScene.add(grass.mesh);
+        }
+
+        let animating = false;
+        aniStartTime = 0.0;
+
+        function startAnimate(){
+            animating = true;
+            aniStartTime = clock.getElapsedTime();
+        }
+
+        function animateCamera(time){
+            const arcOffset = -0.14 * Math.PI;
+            let passArc = 0.0;
+            const fullArc = Math.PI * 2.66 - arcOffset;
+            let progress = (passArc)/fullArc;
+
+            let cntArc = passArc * progress + arcOffset;
+            if(!animating){
+                const rad = 150 + 200 * progress;
+                camera.position.x = rad * Math.sin(cntArc * 0.7);
+                camera.position.y = 64 * Math.sin(cntArc * 0.9333 + 0.27 * Math.PI) + (128 + 48 * progress);
+                camera.position.z = rad * Math.cos(-1*(cntArc * 0.7)) - 100 * progress;
+                camera.lookAt(blustLight.position);
+                return;
+            }
+            passArc = time - aniStartTime;
+            progress = (passArc)/fullArc;
+
+            cntArc = passArc * progress + arcOffset;
+            if(cntArc > fullArc + arcOffset){
+                return;
+            }
+
+            const rad = 150 + 200 * progress;
+            camera.position.x = rad * Math.sin(1*(cntArc * 0.7));
+            camera.position.y = 64 * Math.sin(cntArc * 0.9333 + 0.27 * Math.PI) + (128 + 48 * progress);
+            camera.position.z = rad * Math.cos(-1*(cntArc * 0.7)) - 100 * progress;
+            camera.lookAt(blustLight.position);
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop);
+
+            let cTime = 0.0;
+            if(animating){
+                cTime = clock.getElapsedTime();
+            }
+
+            animateCamera(cTime);
+
+            const camBlustRootDir = (camera.position.clone().add(blustDirRoot.clone().multiplyScalar(-1))).normalize();
+            const camBlustArc = camBlustRootDir.angleTo(blustDir);
+            const camBlustDot = blustDir.dot(camBlustRootDir);
+            const shaderEffective = (camBlustDot >= 0) ? ((0.5 - camBlustArc/Math.PI)*2.0) : 0.0;
+
+            // traceObj
+            traceObjectMat.uniforms.u_effective.value = shaderEffective;
+            traceObjectMat.uniforms.u_time.value = cTime;
+
+            // renderScene
+            renderer.setClearColor(new THREE.Color(1.0 * shaderEffective, 0.87 - (1.0-shaderEffective) * 0.36, 1.0 - shaderEffective * 0.65));
+            renderer.setRenderTarget( postRenderTarget );
+            renderer.clear();
+            renderer.render(scene, camera);
+
+            // render post Effect
+            postMat.uniforms.u_time.value = cTime;
+            postMat.uniforms.u_cameraPos.value = camera.position;
+            postMat.uniforms.u_diffuse.value = postRenderTarget.texture;
+            postMat.uniforms.u_depth.value = postRenderTarget.depthTexture;
+            postMat.uniforms.u_cornerVecs.value = castCorners();
+            postMat.uniforms.u_effective.value = shaderEffective;
+
+            const radCenter = blustLight.position.clone().project(camera);
+            postMat.uniforms.u_radCenter.value = radCenter;
+
+            renderer.setRenderTarget( comicRenderTarget );
+            renderer.render( postScene, postCamera );
+
+            // particles
+            renderer.clearDepth();
+            if(animating){
+                grassList.forEach(grass => {
+                    const depth = grass.update();
+                    if( depth > -960 ){return;}
+                    particleScene.remove(grass.mesh);
+                    grassList.splice(grassList.indexOf(grass),1);
+                    if(grassList.length < 12){
+                        addGrass();
+                    }
+                });
+                renderer.render(particleScene, camera);
+            }
+            
+            // compose
+            composeCamera.position.set(
+                composeCamPos.x,
+                composeCamPos.y,
+                composeCamPos.z
+            );
+            composeCamera.lookAt(0,0,0);
+
+            comicPanel_0.position.y -= 0.0012;
+            comicPanel_1.position.y += 0.002;
+            comicPanel_2.position.y -= 0.0012;
+
+            renderer.setClearColor(new THREE.Color(0x111111));
+            renderer.setRenderTarget( null );
+            renderer.clear();
+            renderer.render(composeScene, composeCamera);
+        }
+
+        function castCorners(){
+
+            const corners = [
+                {x: 0, y: 0}, // TL
+                {x: 1, y: 0}, // TR
+                {x: 0, y: 1}, // BL
+                {x: 1, y: 1}, // BR
+            ];
+
+            const raycaster = new THREE.Raycaster();
+
+            const cameraDir =  new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+
+            const farVectors = corners.map((corner)=>{
+                const normalizedCorner = new THREE.Vector2(
+                    (corner.x) * 2 - 1,
+                    - (corner.y) * 2 + 1
+                );
+
+                raycaster.setFromCamera( normalizedCorner, camera );
+                const cornerDir = raycaster.ray.direction;
+
+                const rad = cameraDir.angleTo(cornerDir);
+                
+                const meg = camera.far / Math.cos(rad);
+                return ((cornerDir.clone().multiplyScalar(meg)).add(camera.position));
+            });
+            return farVectors;
+        }
+    </script>
+</html>

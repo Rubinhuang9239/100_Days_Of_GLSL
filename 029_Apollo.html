@@ -1,0 +1,170 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="lib/loaderUtils.js"></script>
+    <script src="lib/perlinNoise.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+        let scene, camera, controls;
+        let renderer;
+        let analyser; // audio
+        let pointLight_1;
+        let lunarModuleGroup;
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+            // u_loudness: {type: 'float', value: 0.0},
+        }
+        const clock = new THREE.Clock();
+
+        const pNoise = new PerlinNoise();
+
+        window.addEventListener('load', ()=>{
+            init();
+            // document.body.addEventListener('click', function(){
+            //     setupAnalyser();
+            // },{once:true});
+        });
+
+        const init = async() =>  {
+            setupScene();
+            addLighting();
+            await add3dObjects();
+            animationLoop();
+        }
+
+        function setupScene(){
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200)
+            camera.position.set(-6.0, -56, 26.0);
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x140717);
+            document.body.appendChild(renderer.domElement)
+
+            // controls = new THREE.OrbitControls( camera, renderer.domElement);
+            // controls.autoRotate = true;
+            // controls.autoRotateSpeed = -1;
+        }
+
+        function addLighting() {
+            const pointLight_0 = new THREE.PointLight(0xFFEED0, 0.28);
+            pointLight_0.position.set(50, 50, 50);
+            scene.add(pointLight_0);
+
+            let ambientLight = new THREE.AmbientLight(0xFFEECC);
+            ambientLight.intensity = 0.1;
+            scene.add(ambientLight);
+        }
+
+        add3dObjects = async() => {
+            const lunarModuleScene = (await loadGLTFModel('/shader_029/asset/lunar_module.gltf')).scene;
+            lunarModuleGroup = new THREE.Group();
+            while(lunarModuleScene.children.length > 0){
+                const child = lunarModuleScene.children[0];
+                lunarModuleGroup.add(child);
+            }
+            lunarModuleGroup.position.set(0,5.35,0);
+            scene.add(lunarModuleGroup);
+
+            const ThrustMaterial = new THREE.ShaderMaterial({
+              uniforms: uniforms,
+              vertexShader: await loadShader('shader_029/vertex_flame.vert'),
+              fragmentShader: await loadShader('shader_029/fragment_flame.frag'),
+              transparent: true,
+              side: THREE.DoubleSide
+            });
+
+            const ThrustFlame = new THREE.Mesh(new THREE.SphereBufferGeometry(1.36,32,32), ThrustMaterial);
+            ThrustFlame.scale.set(0.94,1,0.94);
+            ThrustFlame.position.set(0.035,-5.345,0.042);
+            lunarModuleGroup.add(ThrustFlame);
+
+            pointLight_1 = new THREE.PointLight(0x88AAFF, 1.5, 9.0);
+            pointLight_1.position.set(0, 0, 0);
+            ThrustFlame.add(pointLight_1);
+
+            const pointGeo = new THREE.SphereGeometry(0.1,8,8);
+            for(let i = 0; i < 64; i++){
+              const pos = new THREE.Vector3(Math.random()*200-100,Math.random()*200-100,Math.random()*200-100);
+              const PointMesh = new THREE.Mesh(pointGeo, new THREE.MeshBasicMaterial);
+              PointMesh.position.copy(pos);
+              scene.add(PointMesh);
+            }
+        }
+
+        function animationLoop() {
+            requestAnimationFrame(animationLoop)
+            lunarModuleGroup.position.y -= 0.15;
+            lunarModuleGroup.rotation.y -= 0.005;
+            camera.lookAt(lunarModuleGroup.position);
+            // controls.target.copy(lunarModuleGroup.position);
+            // controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            //  const cLoudness = 0.18 * (normalizeLoudness(getLoudness()) - uniforms.u_loudness.value);
+            
+            const noiseVal = pNoise.noise(cTime * 8);
+
+            pointLight_1.intensity = 2.0 - 1.8 * noiseVal;
+            renderer.render(scene, camera);
+        }
+
+        function normalizeLoudness(raw){
+            const mathClamp = (num, a, b) => {
+                return Math.max(Math.min(num, Math.max(a, b)), Math.min(a, b));
+            }
+            return mathClamp(raw, 0, 20) / 32;
+        }
+
+        function getLoudness() {
+            if(!analyser){
+                return 0.0;
+            }
+            let array = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(array);
+
+            let average = 0;
+            // let max = 0;
+            for (let i = 0; i < array.length; i++) {
+                a = Math.abs(array[i] - 128);
+                average += a;
+                // max = Math.max(max, a);
+            }
+            average /= array.length;
+            return average;
+        }
+
+        function setupAnalyser(){
+            if(window.context){
+                document.getElementById('voice').play();
+                return;
+            }
+            const audioTag = document.getElementById('voice');
+            window.context = new AudioContext();
+            audio = context.createMediaElementSource(audioTag);
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.9;
+            analyser.fftSize = 512;
+            audio.connect(analyser);
+            analyser.connect(context.destination);
+            audioTag.play();
+        }
+    </script>
+</html>

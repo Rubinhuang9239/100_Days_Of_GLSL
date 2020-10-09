@@ -1,0 +1,107 @@
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+  <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+  <script src="lib/loaderUtils.js"></script>
+  <script id="fragShader" type="shader">
+</script>
+</head>
+<body style="margin: 0px;" onload="init()">
+<script>
+  // standard global variables
+  var scene, camera, renderer, textureLoader, light;
+
+  // Character 3d object
+  var character = null;
+
+  // FUNCTIONS
+  async function init() {
+    // SCENE
+    scene = new THREE.Scene();
+    textureLoader = new THREE.TextureLoader();
+
+    // CAMERA
+    var SCREEN_WIDTH = window.innerWidth;
+    var SCREEN_HEIGHT = window.innerHeight;
+    var VIEW_ANGLE = 45;
+    var ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT;
+    var NEAR = 0.1;
+    var FAR = 1000;
+    camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT,
+      NEAR, FAR);
+    scene.add(camera);
+    camera.position.set(0,0,5);
+
+    // RENDERER
+    renderer = new THREE.WebGLRenderer({
+      antialias:true,
+      alpha: true
+    });
+    renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+    renderer.setClearColor(0x000000);
+    var container = document.body;
+    container.appendChild( renderer.domElement );
+
+    const controls = new THREE.OrbitControls( camera, renderer.domElement);
+    // controls.target.copy(new THREE.Vector3(0,0,0));
+
+    // Create light
+    light = new THREE.PointLight(0xffffff, 1.0);
+    // We want it to be very close to our character
+    light.position.set(0.0, 0.55, 2.0);
+    scene.add(light);
+    await addCharactor();
+
+    // Start animation
+    animate();
+  }
+  
+  async function addCharactor(){
+    var g = new THREE.SphereGeometry(1.0, 64, 64);
+    var earthTex = textureLoader.load('img/earth_day.jpg');
+    earthTex.magFilter = THREE.NearestFilter;
+
+    var mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.merge([
+            THREE.UniformsLib['lights'],
+            {
+                lightIntensity: {type: 'f', value: 1.0},
+                tex_0: {type: 't', value: null},
+                tex_1: {type: 't', value: null}
+            }
+        ]),
+        vertexShader: await loadShader('shader_028/vertex.vert'),
+        fragmentShader: await loadShader('shader_028/fragment.frag'),
+        transparent: true,
+        lights: true
+    });
+    // THREE.UniformsUtils.merge() call THREE.clone() on
+    // each uniform. We don't want our texture to be
+    // duplicated, so I assign it to the uniform value
+    // right here.
+    mat.uniforms.tex_0.value = earthTex;
+
+    // Create character
+    character = new THREE.Mesh(g, mat);
+    scene.add(character);
+  } 
+
+  function animate() {
+    // Update light profile
+    // var timestampNow = new Date().getTime()/1000.0;
+    // var lightIntensity = 0.75 +
+    //   0.25 * Math.cos(timestampNow *
+    //     Math.PI);
+
+    // character.material.uniforms
+    //   .lightIntensity.value = lightIntensity;
+    // light.color.setHSL(lightIntensity, 1.0, 0.5);
+
+    // Render scene
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+</script>
+</body>
+</html>
+ 

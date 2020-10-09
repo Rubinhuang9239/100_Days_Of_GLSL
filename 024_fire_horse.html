@@ -1,0 +1,220 @@
+<html>
+    <title>Use Shader Material in Three.js</title>
+    <style>
+        html,body{
+            width:100%;
+            height: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+
+    </style>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/inflate.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r119/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/FBXLoader.js"></script>
+    <body>
+    </body>
+    <script type='text/javascript'>
+
+        class PerlinNoise {
+            constructor(rand = Math.random) {
+                let perm = new Int8Array(257);
+
+                for (let i = 0; i < 256; i++) {
+                perm[i] = i & 1 ? 1 : -1;
+                }
+
+                for (let i = 0; i < 256; i++) {
+                let j = (rand() * 4294967296) & 255;
+
+                [ perm[i], perm[j] ] = [ perm[j], perm[i] ];
+                }
+                perm[256] = perm[0];
+
+                function noise1d(x) {
+                let x0 = x|0;
+                let x1 = x - x0;
+                let xi = x0 & 255;
+                let fx = (3 - 2 * x1) * x1 * x1;
+                let a = x1 * perm[xi];
+                let b = (x1 - 1) * perm[xi + 1];
+
+                return a + fx * (b - a);
+                }
+
+                function noise(x) {
+                let sum = 0;
+
+                sum += (1 + noise1d(x)) * 0.25;
+                sum += (1 + noise1d(x * 2)) * 0.125;
+                sum += (1 + noise1d(x * 4)) * 0.0625;
+                sum += (1 + noise1d(x * 8)) * 0.03125;
+
+                return sum;
+                }
+
+                this.noise = noise;
+            }
+        }
+
+        let scene;
+        let camera;
+        let renderer;
+        let controls;
+        let analyser;
+
+        let pointLight_0;
+
+        const uniforms = {
+            u_time: {type: 'float', value: 0.0},
+        }
+        const clock = new THREE.Clock();
+        const pNoise = new PerlinNoise();
+
+        window.addEventListener('load', ()=>{
+            init();
+        });
+
+        function init() {
+            scene = new THREE.Scene()
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 8000)
+            camera.position.set(0, 250, 320)
+
+            renderer = new THREE.WebGLRenderer({alpha:false});
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // default THREE.PCFShadowMap
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x111111);
+
+            document.body.appendChild(renderer.domElement)
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement);
+            controls.autoRotate = true;
+            controls.target.copy(new THREE.Vector3(0,160,0));
+
+            addLighting();
+            animationLoop();
+            void add3dObjects();
+        }
+
+        function addLighting() {
+            pointLight_0 = new THREE.PointLight(0xEE7711,1,1800,1);
+            pointLight_0.position.set(0, 600, 0);
+            pointLight_0.castShadow = true; 
+            scene.add(pointLight_0);
+
+            pointLight_0.shadow.mapSize.width = 256;  // default
+            pointLight_0.shadow.mapSize.height = 256; // default
+            pointLight_0.shadow.camera.near = 0.5;       // default
+            pointLight_0.shadow.camera.far = 5000;      // default
+            pointLight_0.shadow.radius = 2.5;
+
+            pointLight_1 = new THREE.PointLight(0xEECC22,0.5,320,1);
+            pointLight_1.position.set(0, 80, 0);
+            scene.add(pointLight_1);
+        }
+
+        add3dObjects = async() => {
+            const loadShader = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FileLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const loadModel = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.FBXLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const loadTexture = ( url ) =>{
+                return new Promise((resolve, reject)=>{
+                    const loader = new THREE.TextureLoader();
+                    loader.load(
+                        url,
+                        ( data ) => {
+                            resolve( data );
+                        },
+                        undefined,
+                        (err)=>{
+                            reject(err);
+                        }
+                    );
+                });
+            };
+
+            const material =  new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                transparent: true,
+                fragmentShader: await loadShader('shader_024/fragment.frag'),
+                vertexShader: await loadShader('shader_024/vertex.vert'),
+                side: THREE.DoubleSide
+            });
+
+            const horse = (await loadModel('shader_024/asset/horse.fbx')).children[0];
+            horse.scale.set(1.0,1.0,1.0);
+            horse.position.set(0,165,0);
+            horse.material = material;
+            horse.castShadow = true; //default is false
+            horse.receiveShadow = false; //default 
+            scene.add(horse);
+
+            const gate = (await loadModel('shader_024/asset/gate.fbx')).children[0];
+            gate.scale.set(19.0,19.0,19.0);
+            gate.position.set(-1000,0,1000);
+            gate.material.color = new THREE.Color(0x898989)
+            gate.rotation.y = 0.75*Math.PI;
+            scene.add(gate);
+
+            const normalMap = await loadTexture('img/ground_normal.png');
+            normalMap.wrapS = THREE.RepeatWrapping;
+            normalMap.wrapT = THREE.RepeatWrapping;
+            normalMap.repeat.set( 20, 20);
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000,5000,400), new THREE.MeshStandardMaterial({
+                color: 0x898989,
+                normalMap: normalMap,
+            }));
+            ground.rotation.x = -0.5*Math.PI;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            scene.fog = new THREE.FogExp2( 0x3030303, 0.00035 );
+        }
+
+        function animationLoop() {
+            controls.update();
+
+            const cTime = clock.getElapsedTime();
+            uniforms.u_time.value = cTime;
+            const noiseVal = pNoise.noise(cTime);
+            pointLight_0.intensity = 0.35 + 1.25*noiseVal;
+            pointLight_0.position.z = noiseVal*10-5;
+
+            renderer.render(scene, camera)
+            requestAnimationFrame(animationLoop)
+        }
+    </script>
+</html>
